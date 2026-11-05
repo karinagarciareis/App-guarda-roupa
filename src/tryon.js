@@ -3,8 +3,9 @@
 // 2) Montagem manual: recorta o fundo das peças e deixa arrastar/redimensionar sobre a foto.
 const TryOn = (() => {
   const GEMINI_MODELS = [
-    { id: "gemini-2.5-flash-image", label: "Gemini 2.5 Flash Image (rápido, mais barato)" },
-    { id: "gemini-3-pro-image-preview", label: "Gemini 3 Pro Image (mais fiel, mais caro)" },
+    { id: "gemini-3.1-flash-image", label: "Nano Banana 2 (recomendado)" },
+    { id: "gemini-2.5-flash-image", label: "Nano Banana (mais barato)" },
+    { id: "gemini-3-pro-image", label: "Nano Banana Pro (mais fiel, mais caro)" },
   ];
 
   const CAT_EN = {
@@ -55,7 +56,8 @@ Return only the image.`;
       const msg = json?.error?.message || `Erro ${res.status}`;
       if (res.status === 400 && /api key/i.test(msg)) throw new Error("Chave do Gemini inválida. Confira em Perfil.");
       if (res.status === 404) throw new Error(`O modelo "${model}" não foi encontrado. Troque o modelo em Perfil → Provador virtual.`);
-      if (res.status === 429) throw new Error("Limite do Gemini atingido. Confira se a geração de imagens está liberada no seu plano e tente em alguns minutos.");
+      if (res.status === 429 && /free_tier/i.test(msg)) throw new Error("Sua conta do Google está no plano gratuito, que não gera imagens. Ative o faturamento em aistudio.google.com (Settings → Billing / Upgrade) e tente de novo. A mesma chave continua valendo.");
+      if (res.status === 429) throw new Error("Limite do Gemini atingido. Espere alguns minutos e tente de novo.");
       throw new Error("Gemini: " + msg);
     }
     const outParts = json?.candidates?.[0]?.content?.parts || [];
