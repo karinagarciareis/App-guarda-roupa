@@ -19,7 +19,7 @@ const state = {
   profile: null,
   items: [],
   looks: [],
-  settings: { apiKey: "" },
+  settings: { apiKey: "", geminiKey: "", geminiModel: TryOn.GEMINI_MODELS[0].id, autoTryOn: true },
   aiKind: null, // "claude-ai" | "api" | null
   view: "closet",
   closet: { source: "tenho", cat: "all" },
@@ -260,12 +260,31 @@ function renderResults() {
   </div>`;
 }
 
+function tryOnBlock(l, scopeAttrs) {
+  const canAi = !!state.settings.geminiKey && !!state.profile.photo;
+  let media = "";
+  if (l.tryOnLoading) {
+    media = `<div class="tryon loading-tryon">${state.profile.photo ? `<img src="${state.profile.photo}" alt="">` : ""}<div class="tryon-overlay"><div class="spinner"></div><span>Vestindo o look em você…</span></div></div>`;
+  } else if (l.tryOn) {
+    media = `<div class="tryon"><img src="${l.tryOn}" alt="Você vestindo o look ${esc(l.title)}"></div>`;
+  }
+  const err = l.tryOnError ? `<div class="notice warn" style="margin:12px 16px 0">${esc(l.tryOnError)}</div>` : "";
+  const btns = state.profile.photo ? `<div class="row tryon-actions">
+      ${canAi ? `<button class="btn small primary" data-action="tryon-ai" ${scopeAttrs} ${l.tryOnLoading ? "disabled" : ""}>${l.tryOn ? "Gerar de novo" : "Vestir em mim (IA)"}</button>` : ""}
+      <button class="btn small" data-action="tryon-manual" ${scopeAttrs}>Montar na minha foto</button>
+      ${!canAi ? `<span class="small">Para a foto realista, conecte o provador em Perfil.</span>` : ""}
+    </div>` : `<div class="tryon-actions small">Adicione sua foto do corpo em Perfil para ver os looks em você.</div>`;
+  return media + err + btns;
+}
+
 function lookCard(l, { index, saved }) {
+  const scopeAttrs = saved ? `data-scope="saved" data-id="${l.id}"` : `data-scope="result" data-index="${index}"`;
   const items = l.itemIds.map(itemById).filter(Boolean);
   const tiles = items.map((i) => `<div class="tile"><img src="${i.thumb || i.photo}" alt="${esc(i.name)}"><span class="tag ${i.source === "desejo" ? "want" : ""}">${SOURCE_LABEL[i.source]}</span></div>`).join("");
   const toBuy = items.filter((i) => i.source === "desejo");
   return `<article class="look">
-    <div class="collage" style="grid-template-columns:repeat(${items.length === 2 || items.length === 4 ? 2 : 3},1fr)">${tiles || '<div class="tile"></div>'}</div>
+    ${tryOnBlock(l, scopeAttrs)}
+    <div class="collage ${l.tryOn ? "mini" : ""}" style="grid-template-columns:repeat(${items.length === 2 || items.length === 4 ? 2 : 3},1fr)">${tiles || '<div class="tile"></div>'}</div>
     <div class="body">
       ${saved && l.occasion ? `<span class="eyebrow">${esc(l.occasion)}${l.createdAt ? " · " + new Date(l.createdAt).toLocaleDateString("pt-BR") : ""}</span>` : ""}
       <h4>${esc(l.title)}</h4>
@@ -321,6 +340,24 @@ function renderProfile() {
           <span class="hint">Fica salva só neste aparelho. Crie em console.anthropic.com.</span>
         </div>
         <button class="btn" data-action="save-key">Salvar chave</button>`}
+      </div>
+
+      <div class="card">
+        <span class="label" style="font-weight:700">Provador virtual (ver o look no seu corpo)</span>
+        <p class="small" style="margin:0">Gera uma foto realista sua vestindo o look, usando a IA de imagem do Google (Gemini). Sem chave, você ainda pode montar o look na sua foto à mão.</p>
+        ${window.claude ? `<div class="notice warn">Dentro do claude.ai a foto com IA fica bloqueada. Para usar, abra a versão web do app.</div>` : ""}
+        <div class="field">
+          <label for="pf-gkey">Chave da API do Gemini</label>
+          <input type="password" id="pf-gkey" value="${esc(state.settings.geminiKey)}" placeholder="AIza…" autocomplete="off">
+          <span class="hint">Crie em aistudio.google.com → Get API key. A geração de imagem pode exigir faturamento ativo. Fica salva só neste aparelho.</span>
+        </div>
+        <div class="field">
+          <label for="pf-gmodel">Modelo</label>
+          <select id="pf-gmodel">${TryOn.GEMINI_MODELS.map((m) => `<option value="${m.id}" ${state.settings.geminiModel === m.id ? "selected" : ""}>${esc(m.label)}</option>`).join("")}
+            ${TryOn.GEMINI_MODELS.some((m) => m.id === state.settings.geminiModel) ? "" : `<option value="${esc(state.settings.geminiModel)}" selected>${esc(state.settings.geminiModel)}</option>`}</select>
+        </div>
+        <label class="toggle" for="pf-auto"><span>Vestir automaticamente ao criar looks</span><input type="checkbox" id="pf-auto" ${state.settings.autoTryOn ? "checked" : ""}></label>
+        <button class="btn" data-action="save-gemini">Salvar provador</button>
       </div>
 
       <div class="card">
@@ -466,6 +503,7 @@ function shuffleLooks() {
   state.error = looks.length ? null : "Não deu para montar combinações com esses filtros. Cadastre mais peças ou libere mais seções.";
   if (!looks.length) state.results = null;
   render();
+  autoTryOn(looks);
   $("#results")?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
@@ -545,12 +583,61 @@ FORMATO: responda só com JSON neste formato:
     }).filter((l) => l.itemIds.length);
     if (!looks.length) throw new Error("A IA não conseguiu montar looks com essas peças. Tente liberar mais seções.");
     state.results = { mode: "ai", looks, bodyRead: out.leitura_do_corpo || null, refRead: out.leitura_da_referencia || null };
+    autoTryOn(looks);
   } catch (e) {
     state.error = e.message === "NO_AI" ? "A IA não está conectada. Veja em Perfil." : e.message || "Algo deu errado. Tente de novo.";
   } finally {
     state.loading = false;
     render();
   }
+}
+
+function autoTryOn(looks) {
+  if (!state.settings.autoTryOn || !state.settings.geminiKey || !state.profile?.photo) return;
+  // duas de cada vez para não estourar limite
+  let i = 0;
+  const next = () => { if (i < looks.length) { const l = looks[i++]; return runTryOn(l).then(next); } };
+  next(); next();
+}
+
+async function runTryOn(look) {
+  const items = look.itemIds.map(itemById).filter(Boolean);
+  if (!items.length || !state.profile.photo) return;
+  look.tryOnLoading = true; look.tryOnError = null; render();
+  try {
+    look.tryOn = await TryOn.generate({
+      apiKey: state.settings.geminiKey, model: state.settings.geminiModel,
+      body: state.profile.photo, items, occasion: state.create.occasion + (state.create.details ? ", " + state.create.details : ""),
+    });
+  } catch (e) {
+    look.tryOnError = e.message || "Não foi possível gerar a foto.";
+  } finally {
+    look.tryOnLoading = false;
+    await syncSavedTryOn(look);
+    render();
+  }
+}
+
+// se o look do resultado já foi salvo, copia a foto para o salvo (e vice-versa)
+async function syncSavedTryOn(look) {
+  const savedId = look.savedId || (state.looks.includes(look) ? look.id : null);
+  const saved = state.looks.find((x) => x.id === savedId);
+  if (saved && saved !== look) saved.tryOn = look.tryOn;
+  if (saved) await persist("looks");
+}
+
+function getLook(el) {
+  return el.dataset.scope === "saved" ? state.looks.find((l) => l.id === el.dataset.id) : state.results?.looks[Number(el.dataset.index)];
+}
+
+function openMontage(look) {
+  const items = look.itemIds.map(itemById).filter(Boolean);
+  const sheet = openSheet(`<h3>Montar na minha foto</h3><div class="stack" id="mt-root"><div class="loading"><div class="spinner"></div>Recortando as peças…</div></div>`);
+  TryOn.openMontage(sheet.querySelector("#mt-root"), {
+    body: state.profile.photo, items,
+    onCancel: closeSheet,
+    onSave: async (img) => { look.tryOn = img; look.tryOnError = null; await syncSavedTryOn(look); closeSheet(); render(); toast("Foto do look salva"); },
+  });
 }
 
 async function identifyDraft() {
@@ -640,12 +727,20 @@ document.addEventListener("click", async (e) => {
     case "save-look": {
       const l = state.results?.looks[Number(el.dataset.index)];
       if (!l || l.savedId) return;
-      const saved = { ...l, id: uid(), occasion: state.create.occasion + (state.create.refText ? " · " + state.create.refText : ""), createdAt: Date.now() };
+      const saved = { ...l, tryOnLoading: false, tryOnError: null, id: uid(), occasion: state.create.occasion + (state.create.refText ? " · " + state.create.refText : ""), createdAt: Date.now() };
       l.savedId = saved.id;
       state.looks.unshift(saved);
       await persist("looks"); render(); toast("Look salvo");
       break;
     }
+    case "tryon-ai": { const l = getLook(el); if (l) runTryOn(l); break; }
+    case "tryon-manual": { const l = getLook(el); if (l) openMontage(l); break; }
+    case "save-gemini":
+      state.settings.geminiKey = $("#pf-gkey").value.trim();
+      state.settings.geminiModel = $("#pf-gmodel").value;
+      state.settings.autoTryOn = $("#pf-auto").checked;
+      await persist("settings"); render(); toast(state.settings.geminiKey ? "Provador conectado" : "Provador salvo");
+      break;
     case "delete-look": state.looks = state.looks.filter((l) => l.id !== id); await persist("looks"); render(); toast("Look excluído"); break;
     case "finish-onboarding": {
       const d = state.onboardDraft;
@@ -714,9 +809,10 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeSheet
 (async function init() {
   render();
   const [profile, items, looks, settings] = await Promise.all([
-    Store.get("profile", null), Store.get("items", []), Store.get("looks", []), Store.get("settings", { apiKey: "" }),
+    Store.get("profile", null), Store.get("items", []), Store.get("looks", []), Store.get("settings", {}),
   ]);
-  Object.assign(state, { profile, items, looks, settings, ready: true });
+  Object.assign(state, { profile, items, looks, ready: true });
+  Object.assign(state.settings, settings || {});
   if (profile && !profile.photo) state.create.useBody = false;
   render();
   refreshAi();
