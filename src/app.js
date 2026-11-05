@@ -191,7 +191,7 @@ function renderCreate() {
   const occ = OCCASIONS.map((o) => `<button class="chip" data-action="occasion" data-v="${esc(o)}" aria-pressed="${c.occasion === o}">${o}</button>`).join("");
   const secs = CATS.map((s) => `<button class="chip" data-action="toggle-section" data-cat="${s.id}" aria-pressed="${c.sections.includes(s.id)}">${s.short}</button>`).join("");
   const pinned = c.pinned.map(itemById).filter(Boolean);
-  const aiNote = state.aiKind ? "" : `<div class="notice warn">A IA ainda não está conectada neste aparelho. Você pode sortear combinações sem IA, ou colocar sua chave em <a href="#" data-action="nav" data-view="profile">Perfil</a>.</div>`;
+  const aiNote = state.aiKind ? "" : `<div class="notice warn">A IA ainda não está conectada neste aparelho. Cole a chave do Gemini em <a href="#" data-action="nav" data-view="profile">Perfil → Provador virtual</a>. Enquanto isso, você pode sortear combinações sem IA.</div>`;
   const hasItems = state.items.length > 0;
 
   return `
@@ -317,7 +317,7 @@ function renderProfile() {
   const aiStatus = state.aiKind === "claude-ai" ? "Conectado ao Claude pela sua conta do claude.ai. Não precisa de chave."
     : state.aiKind === "api" ? "Usando sua chave da API da Anthropic."
     : state.aiKind === "gemini" ? "Usando o Gemini (a mesma chave do provador virtual) para montar os looks."
-    : "Sem IA conectada. Abra o app pelo claude.ai ou coloque uma chave da API abaixo.";
+    : "Sem IA conectada. Cole a chave do Gemini no quadro Provador virtual, logo abaixo.";
   return `<h2 class="view-title">Perfil</h2>
     <div class="stack">
       <div class="card">
@@ -336,12 +336,13 @@ function renderProfile() {
       <div class="card">
         <span class="label" style="font-weight:700">Inteligência artificial</span>
         <div class="notice ${state.aiKind ? "" : "warn"}">${aiStatus}</div>
-        ${state.aiKind === "claude-ai" ? "" : `<div class="field">
+        ${state.aiKind === "claude-ai" ? "" : `<details${state.settings.apiKey ? " open" : ""}><summary class="small" style="cursor:pointer">Opcional: usar o Claude com chave própria da Anthropic</summary>
+        <div class="stack" style="margin-top:10px"><div class="field">
           <label for="pf-key">Chave da API da Anthropic</label>
           <input type="password" id="pf-key" value="${esc(state.settings.apiKey)}" placeholder="sk-ant-…" autocomplete="off">
-          <span class="hint">Fica salva só neste aparelho. Crie em console.anthropic.com.</span>
+          <span class="hint">Não é necessária: com a chave do Gemini o app já funciona. Fica salva só neste aparelho.</span>
         </div>
-        <button class="btn" data-action="save-key">Salvar chave</button>`}
+        <button class="btn" data-action="save-key">Salvar chave</button></div></details>`}
       </div>
 
       <div class="card">

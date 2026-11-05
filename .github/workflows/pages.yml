@@ -27,6 +27,10 @@ jobs:
           mkdir -p _site
           cp index.html _site/
           cp -r src _site/
+          # força o celular a baixar a versão nova (evita cache antigo)
+          V="${GITHUB_SHA::8}"
+          sed -i -E "s#(src/[a-z-]+\.(js|css))\"#\1?v=$V\"#g" _site/index.html
+          grep -o 'src/[^"]*' _site/index.html
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
