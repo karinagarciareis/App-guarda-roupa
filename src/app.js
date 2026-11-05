@@ -62,6 +62,7 @@ async function persist(...keys) {
 
 async function refreshAi() {
   AI.setApiKey(state.settings.apiKey);
+  AI.setGeminiKey(state.settings.geminiKey);
   const p = await AI.provider();
   state.aiKind = p ? p.kind : null;
   render();
@@ -315,6 +316,7 @@ function renderProfile() {
   const p = state.profile;
   const aiStatus = state.aiKind === "claude-ai" ? "Conectado ao Claude pela sua conta do claude.ai. Não precisa de chave."
     : state.aiKind === "api" ? "Usando sua chave da API da Anthropic."
+    : state.aiKind === "gemini" ? "Usando o Gemini (a mesma chave do provador virtual) para montar os looks."
     : "Sem IA conectada. Abra o app pelo claude.ai ou coloque uma chave da API abaixo.";
   return `<h2 class="view-title">Perfil</h2>
     <div class="stack">
@@ -739,7 +741,7 @@ document.addEventListener("click", async (e) => {
       state.settings.geminiKey = $("#pf-gkey").value.trim();
       state.settings.geminiModel = $("#pf-gmodel").value;
       state.settings.autoTryOn = $("#pf-auto").checked;
-      await persist("settings"); render(); toast(state.settings.geminiKey ? "Provador conectado" : "Provador salvo");
+      await persist("settings"); await refreshAi(); toast(state.settings.geminiKey ? "Provador conectado" : "Provador salvo");
       break;
     case "delete-look": state.looks = state.looks.filter((l) => l.id !== id); await persist("looks"); render(); toast("Look excluído"); break;
     case "finish-onboarding": {
@@ -813,6 +815,14 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeSheet
   ]);
   Object.assign(state, { profile, items, looks, ready: true });
   Object.assign(state.settings, settings || {});
+  // Link de configuração: ...#chave=SUA_CHAVE salva a chave do Gemini no aparelho e limpa o endereço.
+  const m = location.hash.match(/^#chave=([A-Za-z0-9._\-]+)$/);
+  if (m) {
+    state.settings.geminiKey = m[1];
+    await Store.set("settings", state.settings);
+    try { history.replaceState(null, "", location.pathname + location.search); } catch (e) { location.hash = ""; }
+    setTimeout(() => toast("Chave do Gemini salva neste aparelho"), 400);
+  }
   if (profile && !profile.photo) state.create.useBody = false;
   render();
   refreshAi();

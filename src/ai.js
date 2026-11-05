@@ -5,6 +5,8 @@ const AI = (() => {
   const MODEL = "claude-sonnet-5-5";
   let samplePromise = null;
   let apiKey = "";
+  let geminiKey = "";
+  const GEMINI_TEXT_MODELS = ["gemini-2.5-flash", "gemini-flash-latest"];
 
   function getSample() {
     if (!samplePromise) {
@@ -21,6 +23,7 @@ const AI = (() => {
   }
 
   function setApiKey(k) { apiKey = (k || "").trim(); }
+  function setGeminiKey(k) { geminiKey = (k || "").trim(); }
 
   async function provider() {
     const sample = await getSample();
@@ -29,6 +32,7 @@ const AI = (() => {
       return { kind: "claude-ai", sample, maxImages: lim?.images?.maxCount ?? 0 };
     }
     if (apiKey) return { kind: "api", maxImages: 20 };
+    if (geminiKey) return { kind: "gemini", maxImages: 12 };
     return null;
   }
 
@@ -77,6 +81,7 @@ const AI = (() => {
         throw new Error(ERROR_COPY[e?.code] || e?.message || "Não foi possível falar com o Claude agora.");
       }
     }
+    if (p.kind === "gemini") return askGemini(prompt, images.slice(0, p.maxImages), signal);
     const content = [];
     for (const d of images.slice(0, p.maxImages)) {
       const [head, b64] = d.split(",");
@@ -105,7 +110,42 @@ const AI = (() => {
     return parseJson(text);
   }
 
-  return { provider, askJson, setApiKey, getSample };
+  async function askGemini(prompt, images, signal) {
+    const parts = [{ text: prompt + "\n\nResponda somente com o JSON." }];
+    for (const d of images) {
+      const [head, b64] = d.split(",");
+      parts.push({ inline_data: { mime_type: head.match(/data:(.*?);/)[1], data: b64 } });
+    }
+    let lastErr = "";
+    for (const model of GEMINI_TEXT_MODELS) {
+      let res;
+      try {
+        res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+          method: "POST",
+          signal,
+          headers: { "content-type": "application/json", "x-goog-api-key": geminiKey },
+          body: JSON.stringify({ contents: [{ role: "user", parts }], generationConfig: { responseMimeType: "application/json" } }),
+        });
+      } catch (e) {
+        if (e.name === "AbortError") throw e;
+        throw new Error("Não consegui falar com o Gemini. Confira a internet. No claude.ai o Gemini fica bloqueado: use a versão web do app.");
+      }
+      const json = await res.json().catch(() => ({}));
+      if (res.status === 404) { lastErr = `Modelo ${model} não encontrado.`; continue; }
+      if (!res.ok) {
+        const msg = json?.error?.message || `Erro ${res.status}`;
+        if (/api key/i.test(msg) || res.status === 401 || res.status === 403) throw new Error("Chave do Gemini inválida ou sem permissão. Confira em Perfil → Provador virtual.");
+        if (res.status === 429) throw new Error("Limite do Gemini atingido. Espere um pouco e tente de novo.");
+        throw new Error("Gemini: " + msg);
+      }
+      const text = (json?.candidates?.[0]?.content?.parts || []).map((x) => x.text || "").join("");
+      if (!text) throw new Error("O Gemini não respondeu. Tente de novo.");
+      return parseJson(text);
+    }
+    throw new Error("Gemini: " + lastErr);
+  }
+
+  return { provider, askJson, setApiKey, setGeminiKey, getSample };
 })();
 
 // ---------- Imagens ----------
